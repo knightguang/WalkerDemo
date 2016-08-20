@@ -1,5 +1,6 @@
 # WalkerDemo
 健康类APP所使用的HealthKit
+    
     // Body Measurements  身体测量
     HKQuantityTypeIdentifierBodyMassIndex               身高体重指数
     HKQuantityTypeIdentifierBodyFatPercentage           体脂率
