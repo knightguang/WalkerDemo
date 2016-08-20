@@ -30,9 +30,16 @@
     }
    
     // 类型
-    HKQuantityType *quantityType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierStepCount];
+    // 步数
+    HKQuantityType *stepType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierStepCount];
+    // 卡路里
+    HKQuantityType *calorieType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierActiveEnergyBurned];
+    // 走了多少路
+    HKQuantityType *distanceType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDistanceWalkingRunning];
     
-    NSSet *set = [NSSet setWithObject:quantityType];
+    NSSet *set = [NSSet setWithObject:stepType];
+    NSSet *calSet = [NSSet setWithObject:calorieType];
+    NSSet *distanceSet = [NSSet setWithObject:distanceType];
     
     [_health requestAuthorizationToShareTypes:nil
                                     readTypes:set
@@ -47,10 +54,35 @@
                                            
                                            NSLog(@"requestAuthorization Failed");
                                        }
-                                   
     }];
     
+    [_health requestAuthorizationToShareTypes:nil
+                                    readTypes:calSet
+                                   completion:^(BOOL success, NSError * _Nullable error) {
+                                       if (success) {
+                                           
+                                           NSLog(@"success");
+//                                           [self readCalorieData];
+                                           [self readCalorieTotalData];
+                                       } else {
+                                           
+                                           NSLog(@"requestAuthorization Failed");
+                                       }
+                                   }];
     
+    [_health requestAuthorizationToShareTypes:nil
+                                    readTypes:distanceSet
+                                   completion:^(BOOL success, NSError * _Nullable error) {
+                                       if (success) {
+                                           
+                                           NSLog(@"success");
+//                                           [self readCalorieData];
+                                           [self readCalorieTotalData];
+                                       } else {
+                                           
+                                           NSLog(@"requestAuthorization Failed");
+                                       }
+                                   }];
 }
 
 // 读取步数信息
@@ -91,6 +123,7 @@
     [_health executeQuery:sampleQuery];
 }
 
+// 解析步数信息，筛选今天的总数据
 - (void)readStepTotalData
 {
     HKQuantityType *type = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierStepCount];
@@ -107,7 +140,7 @@
     
     NSPredicate *predicate = [HKQuery predicateForSamplesWithStartDate:startDate endDate:endDate options:HKQueryOptionStrictStartDate];
     
-    HKObserverQuery *query = [[HKObserverQuery alloc]
+    HKObserverQuery *observerQuery = [[HKObserverQuery alloc]
                               initWithSampleType:type
                                        predicate:predicate
                                    updateHandler:^(HKObserverQuery * _Nonnull query, HKObserverQueryCompletionHandler  _Nonnull completionHandler, NSError * _Nullable error) {
@@ -133,12 +166,158 @@
     }];
     
     // 开始执行给定的查询
-    [_health executeQuery:query];
+    [_health executeQuery:observerQuery];
     
 }
 
+// 读取卡路里数据
+- (void)readCalorieData
+{
+    HKQuantityType *calorieType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierActiveEnergyBurned];
+    
+    NSSortDescriptor *sortDescriptor = [NSSortDescriptor sortDescriptorWithKey:HKSampleSortIdentifierEndDate ascending:NO];
+    
+    HKSampleQuery *query = [[HKSampleQuery alloc] initWithSampleType:calorieType predicate:nil limit:HKObjectQueryNoLimit sortDescriptors:@[sortDescriptor] resultsHandler:^(HKSampleQuery * _Nonnull query, NSArray<__kindof HKSample *> * _Nullable results, NSError * _Nullable error) {
+            NSLog(@"calorie : %@", results);
+    }];
+    
+    [_health executeQuery:query];
+}
+
+// 解析卡路里数据，筛选今天的数据
+- (void)readCalorieTotalData
+{
+    HKQuantityType *calorieType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierActiveEnergyBurned];
+    // 过滤条件
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    NSDate *nowDate = [NSDate date];
+    NSDateComponents *dateComponents = [calendar components:NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay fromDate:nowDate];
+    
+    // 开始日期
+    NSDate *startDate = [calendar dateFromComponents:dateComponents];
+    // 结束日期
+    NSDate *endDate = [calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:startDate options:0];
+    
+    NSPredicate *predicate = [HKQuery predicateForSamplesWithStartDate:startDate endDate:endDate options:HKQueryOptionStrictStartDate];
+    
+    HKObserverQuery *observerQuery = [[HKObserverQuery alloc]
+                              initWithSampleType:calorieType
+                              predicate:nil
+                              updateHandler:^(HKObserverQuery * _Nonnull query, HKObserverQueryCompletionHandler  _Nonnull completionHandler, NSError * _Nullable error) {
+                                  
+                                  HKStatisticsQuery *sQuery = [[HKStatisticsQuery alloc] initWithQuantityType:calorieType quantitySamplePredicate:predicate options:HKStatisticsOptionCumulativeSum completionHandler:^(HKStatisticsQuery * _Nonnull query, HKStatistics * _Nullable result, NSError * _Nullable error) {
+                                      
+                                      HKQuantity *quantity = result.sumQuantity;
+                                      
+                                      // 卡路里 单位是 k卡路里
+                                      NSInteger sumCalorieCount = [quantity doubleValueForUnit:[HKUnit kilocalorieUnit]];
+                                      
+                                      NSLog(@"%ld", sumCalorieCount);
+                                      
+                                      // 数据共享，存储数据
+                                      NSString *stepString = [NSString stringWithFormat:@"%ld", sumCalorieCount];
+                                      NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"capabilities->App Groups设置id"];
+                                      [defaults setObject:stepString forKey:@"calorieCount"];
+                                      // 同步数据保存
+                                      [defaults synchronize];
+                                      
+                                  }];
+                                  
+                                  // 开始执行给定的查询
+                                  [_health executeQuery:sQuery];
+                              }];
+    
+    // 开始执行给定的查询
+    [_health executeQuery:observerQuery];
+
+}
+
+// 读取路程
+- (void)readDistanceData
+{
+    HKQuantityType *distanceType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDistanceWalkingRunning];
+    
+    NSSortDescriptor *sortDescriptor = [NSSortDescriptor sortDescriptorWithKey:HKSampleSortIdentifierEndDate ascending:NO];
+    
+    HKSampleQuery *query = [[HKSampleQuery alloc] initWithSampleType:distanceType predicate:nil limit:HKObjectQueryNoLimit sortDescriptors:@[sortDescriptor] resultsHandler:^(HKSampleQuery * _Nonnull query, NSArray<__kindof HKSample *> * _Nullable results, NSError * _Nullable error) {
+            NSLog(@"distance : %@", results);
+    }];
+    
+    [_health executeQuery:query];
+}
+
+// 解析里程数据，筛选今天的数据
+- (void)readDistanceTotalData
+{
+    HKQuantityType *distanceType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDistanceWalkingRunning];
+    // 过滤条件
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    NSDate *nowDate = [NSDate date];
+    NSDateComponents *dateComponents = [calendar components:NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay fromDate:nowDate];
+    
+    // 开始日期
+    NSDate *startDate = [calendar dateFromComponents:dateComponents];
+    // 结束日期
+    NSDate *endDate = [calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:startDate options:0];
+    
+    NSPredicate *predicate = [HKQuery predicateForSamplesWithStartDate:startDate endDate:endDate options:HKQueryOptionStrictStartDate];
+    
+    HKObserverQuery *observerQuery = [[HKObserverQuery alloc]
+                                      initWithSampleType:distanceType
+                                      predicate:nil
+                                      updateHandler:^(HKObserverQuery * _Nonnull query, HKObserverQueryCompletionHandler  _Nonnull completionHandler, NSError * _Nullable error) {
+                                          
+                                          // 解析数据
+                                          HKStatisticsQuery *sQuery = [[HKStatisticsQuery alloc] initWithQuantityType:distanceType quantitySamplePredicate:predicate options:HKStatisticsOptionCumulativeSum completionHandler:^(HKStatisticsQuery * _Nonnull query, HKStatistics * _Nullable result, NSError * _Nullable error) {
+                                              
+                                              HKQuantity *quantity = result.sumQuantity;
+                                              
+                                              // 里程数 单位是 m
+                                              double sumDistanceCount = [quantity doubleValueForUnit:[HKUnit meterUnit]];
+                                              
+                                              NSLog(@"%lf", sumDistanceCount);
+                                              
+                                              // 数据共享，存储数据
+                                              NSString *stepString = [NSString stringWithFormat:@"%lf", sumDistanceCount];
+                                              NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"capabilities->App Groups设置id"];
+                                              [defaults setObject:stepString forKey:@"distanceCount"];
+                                              // 同步数据保存
+                                              [defaults synchronize];
+                                              
+                                          }];
+                                          
+                                          // 开始执行给定的查询
+                                          [_health executeQuery:sQuery];
+                                      }];
+    
+    // 开始执行给定的查询
+    [_health executeQuery:observerQuery];
+}
+
+/*
+/
+ / 数据共享，获取数据，1s更新
+- (void)startTimer
+{
+    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(updateStepCount) userInfo:nil repeats:YES];
+    [timer fire];
+    
+}
+- (void)updateStepCount
+{
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"capabilities->App Groups设置"];
+    NSString *stepCount = [defaults objectForKey:@"stepCount"];
+    if (stepCount) {
+        NSLog(@"%@", stepCount);
+    } else {
+        NSLog(@"no data");
+    }
+    
+}
+*/
+
 /**
- *  
+ *
     // Body Measurements  身体测量
     HKQuantityTypeIdentifierBodyMassIndex               身高体重指数
     HKQuantityTypeIdentifierBodyFatPercentage           体脂率
@@ -180,26 +359,5 @@
  
  */
 
-/*
-/
- / 数据共享，获取数据，1s更新
-- (void)startTimer
-{
-    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(updateStepCount) userInfo:nil repeats:YES];
-    [timer fire];
-    
-}
-- (void)updateStepCount
-{
-    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"capabilities->App Groups设置"];
-    NSString *stepCount = [defaults objectForKey:@"stepCount"];
-    if (stepCount) {
-        NSLog(@"%@", stepCount);
-    } else {
-        NSLog(@"no data");
-    }
-    
-}
-*/
 
 @end
