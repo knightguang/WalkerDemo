@@ -41,8 +41,8 @@
                                            
                                            NSLog(@"success");
                                            
-                                           [self readStepEveryData];
-                                           
+//                                           [self readStepEveryData];
+                                           [self readStepTotalData];
                                        } else {
                                            
                                            NSLog(@"requestAuthorization Failed");
@@ -118,6 +118,14 @@
                                            NSInteger sumStepCount = [quantity doubleValueForUnit:[HKUnit countUnit]];
                                            
                                            NSLog(@"%ld", sumStepCount);
+                                           
+                                           // 数据共享，存储数据
+                                           NSString *stepString = [NSString stringWithFormat:@"%ld", sumStepCount];
+                                           NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"capabilities->App Groups设置id"];
+                                           [defaults setObject:stepString forKey:@"stepCount"];
+                                           // 同步数据保存
+                                           [defaults synchronize];
+                                           
                                        }];
                                        
                                        // 开始执行给定的查询
@@ -170,6 +178,28 @@
  
     // Nutrition  营养摄入
  
- */ 
+ */
+
+/*
+/
+ / 数据共享，获取数据，1s更新
+- (void)startTimer
+{
+    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(updateStepCount) userInfo:nil repeats:YES];
+    [timer fire];
+    
+}
+- (void)updateStepCount
+{
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"capabilities->App Groups设置"];
+    NSString *stepCount = [defaults objectForKey:@"stepCount"];
+    if (stepCount) {
+        NSLog(@"%@", stepCount);
+    } else {
+        NSLog(@"no data");
+    }
+    
+}
+*/
 
 @end
